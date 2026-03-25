@@ -103,6 +103,78 @@ index 74df108..d1b1140 100644
      if args.bedrock {
          // Bedrock: path is optional; if provided, it must be an existing directory
          if let Some(ref path) = args.path {
+diff --git a/src/data_processing.rs b/src/data_processing.rs
+index d0035bd..9f213e7 100644
+--- a/src/data_processing.rs
++++ b/src/data_processing.rs
+@@ -192,7 +192,7 @@ pub fn generate_world_with_options(
+                         // docks count as water areas
+                         water_areas::generate_water_area_from_way(&mut editor, way, &xzbbox);
+                     } else {
+-                        waterways::generate_waterways(&mut editor, way);
++                        waterways::generate_waterways(&mut editor, way, args);
+                     }
+                 } else if way.tags.contains_key("bridge") {
+                     //bridges::generate_bridges(&mut editor, way, ground_level); // TODO FIX
+diff --git a/src/element_processing/highways.rs b/src/element_processing/highways.rs
+index d7190f2..48f9906 100644
+--- a/src/element_processing/highways.rs
++++ b/src/element_processing/highways.rs
+@@ -261,6 +261,15 @@ fn generate_highways_internal(
+ 
+             if scale_factor < 1.0 {
+                 block_range = ((block_range as f64) * scale_factor).floor() as i32;
++                // Enforce minimum width so features remain visible at small scales.
++                // Without this, roads vanish at 1:10 (2 * 0.1 = 0).
++                // Major roads get 2 blocks min, minor get 1 block min.
++                let min_range = match highway_type.as_str() {
++                    "motorway" | "primary" | "trunk" | "secondary" => 2,
++                    "tertiary" | "residential" | "unclassified" | "service" => 1,
++                    _ => 1,
++                };
++                block_range = block_range.max(min_range);
+             }
+ 
+             // Calculate elevation based on layer
+diff --git a/src/element_processing/waterways.rs b/src/element_processing/waterways.rs
+index 35265ef..cb4fe5c 100644
+--- a/src/element_processing/waterways.rs
++++ b/src/element_processing/waterways.rs
+@@ -1,11 +1,12 @@
++use crate::args::Args;
+ use crate::block_definitions::*;
+ use crate::bresenham::bresenham_line;
+ use crate::osm_parser::ProcessedWay;
+ use crate::world_editor::WorldEditor;
+ 
+-pub fn generate_waterways(editor: &mut WorldEditor, element: &ProcessedWay) {
++pub fn generate_waterways(editor: &mut WorldEditor, element: &ProcessedWay, args: &Args) {
+     if let Some(waterway_type) = element.tags.get("waterway") {
+-        let (mut waterway_width, waterway_depth) = get_waterway_dimensions(waterway_type);
++        let (mut waterway_width, mut waterway_depth) = get_waterway_dimensions(waterway_type);
+ 
+         // Check for custom width in tags
+         if let Some(width_str) = element.tags.get("width") {
+@@ -17,6 +18,19 @@ pub fn generate_waterways(editor: &mut WorldEditor, element: &ProcessedWay) {
+             });
+         }
+ 
++        // Apply scale to waterway dimensions with minimums
++        if args.scale < 1.0 {
++            waterway_width = ((waterway_width as f64) * args.scale).ceil() as i32;
++            waterway_depth = ((waterway_depth as f64) * args.scale).ceil() as i32;
++            // Rivers must be at least 2 blocks wide, streams at least 1
++            let min_width = match waterway_type.as_str() {
++                "river" | "canal" | "fairway" => 2,
++                _ => 1,
++            };
++            waterway_width = waterway_width.max(min_width);
++            waterway_depth = waterway_depth.max(1);
++        }
++
+         // Skip layers below the ground level
+         if matches!(
+             element.tags.get("layer").map(|s| s.as_str()),
 diff --git a/src/elevation_data.rs b/src/elevation_data.rs
 index 66910d8..11b1316 100644
 --- a/src/elevation_data.rs
