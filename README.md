@@ -64,7 +64,7 @@ You draw a rectangle on the map
 **Map Interface**
 - Global drag-and-drop rectangle selection on dark CARTO basemap
 - Real-time area, block count, and generation time estimates
-- Scale selector: 1:1, 1:2, 1:4, 1:10
+- Scale selector: 1:1, 1:2, 1:4, 1:10 (default)
 - Configurable ground level for different terrain types
 - Mobile-responsive dark theme
 
@@ -75,6 +75,14 @@ You draw a rectangle on the map
 - Rivers, lakes, water bodies
 - Land use zones: farmland, forest, meadow, residential
 - Trees with species detection from OSM tags
+
+**Scale-Aware Feature Rendering**
+- At smaller scales (1:4, 1:10), roads, rivers, and railways are guaranteed to remain visible
+- Major roads (motorway, primary, secondary) render at minimum 2 blocks wide
+- Minor roads, footpaths, and tracks render at minimum 1 block wide
+- Rivers and canals scale proportionally with a minimum of 2 blocks
+- Streams, ditches, and drains scale to minimum 1 block
+- Railways and barriers (walls, fences, hedges) are always 1 block — no minimum needed
 
 **Server & Pipeline**
 - 1.18+ chunk format — works with PaperMC, Spigot, vanilla
@@ -149,6 +157,7 @@ TerraCraft includes a 721-line patch to the upstream [arnis](https://github.com/
 | **WGS84 → BNG transform** | Approximate Helmert projection for UK Ordnance Survey LIDAR data |
 | **1.18+ chunk format** | Removes `Level` wrapper, adds `DataVersion=4189`, `Status=minecraft:full`, `yPos` — required for PaperMC |
 | **Terrain flag fix** | `--elevation-file` implies `--terrain` so buildings register to elevation correctly |
+| **Minimum feature widths** | Roads, rivers enforce minimum block widths at small scales so they don't vanish at 1:10 |
 
 Apply manually:
 
@@ -179,6 +188,19 @@ terracraft/
 ├── Dockerfile          Multi-stage: Rust build + Node runtime
 └── docker-compose.yml  One-command deployment
 ```
+
+## Choosing a Scale
+
+| Scale | Use case | 2km × 2km area | View distance | Detail |
+|-------|----------|----------------|---------------|--------|
+| **1:1** | Architectural detail, single building | 2000 × 2000 blocks | 27 min walk | Every wall, window, kerb |
+| **1:2** | Neighbourhood exploration | 1000 × 1000 blocks | 14 min walk | Buildings recognisable |
+| **1:4** | Village / small town | 500 × 500 blocks | 7 min walk | Good buildings, roads clear |
+| **1:10** | Landscape, valleys, coastline **(default)** | 200 × 200 blocks | 3 min walk | Terrain, roads, rivers visible |
+
+**1:10 is the default** because it produces compact, server-friendly worlds where you can see the whole landscape. Roads, railways, rivers, and walls are guaranteed to remain visible thanks to minimum-width enforcement. Buildings become 1–2 block structures at this scale — recognisable landmarks rather than detailed interiors.
+
+For detail work (e.g. recreating a single street), use 1:1 or 1:2 with a small selection area.
 
 ## Known Limitations
 
