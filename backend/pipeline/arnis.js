@@ -29,12 +29,14 @@ async function runArnis(options) {
 
   const bboxStr = `${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}`;
 
+  // Use --key=value syntax for arguments that may have negative values
+  // to prevent clap from interpreting them as flags
   const args = [
-    '--bbox', bboxStr,
+    `--bbox=${bboxStr}`,
     '--file', osmFile,
     '--output-dir', outputDir,
-    '--scale', String(scale),
-    '--ground-level', String(groundLevel),
+    `--scale=${scale}`,
+    `--ground-level=${groundLevel}`,
     '--terrain',
     '--fillground',
     '--city-boundaries=false',
@@ -45,8 +47,8 @@ async function runArnis(options) {
   }
 
   if (spawnLat != null && spawnLng != null) {
-    args.push('--spawn-lat', String(spawnLat));
-    args.push('--spawn-lng', String(spawnLng));
+    args.push(`--spawn-lat=${spawnLat}`);
+    args.push(`--spawn-lng=${spawnLng}`);
   }
 
   if (onProgress) onProgress(`Running arnis: ${ARNIS_BIN} ${args.join(' ')}`);
