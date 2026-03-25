@@ -35,28 +35,29 @@ ARNIS_BIN=/path/to/arnis PORT=3000 node backend/server.js
 
 ## How It Works
 
-```
-You draw a rectangle on the map
-         │
-         ▼
-┌─────────────────────────────┐
-│  1. Fetch OpenStreetMap     │  Buildings, roads, water, railways,
-│     via Overpass API        │  land use, trees, amenities
-├─────────────────────────────┤
-│  2. Fetch elevation         │  AWS Terrarium (30m global) or
-│                             │  EA LIDAR (1-2m UK) via GeoTIFF
-├─────────────────────────────┤
-│  3. AI enrichment           │  Optional: LLM adds building levels,
-│     (if API key provided)   │  materials, roof types by region
-├─────────────────────────────┤
-│  4. Generate Minecraft      │  Patched arnis engine: terrain,
-│     world (Rust)            │  buildings, interiors, roofs, roads
-├─────────────────────────────┤
-│  5. Package & serve         │  Zip ready for .minecraft/saves/
-└─────────────────────────────┘
-         │
-         ▼
-   Download .zip → Play
+```mermaid
+flowchart TD
+    A["🗺️ Draw rectangle on map"] --> B["📡 Fetch OpenStreetMap data
+    Buildings, roads, water, railways,
+    land use, trees, amenities"]
+    B --> C["⛰️ Fetch elevation data
+    AWS Terrarium 30m global
+    or EA LIDAR 1-2m via GeoTIFF"]
+    C --> D{"🔑 LLM API key
+    provided?"}
+    D -- Yes --> E["🤖 AI enrichment
+    Add building levels, materials,
+    roof types by region"]
+    D -- No --> F
+    E --> F["⚙️ Generate Minecraft world
+    Patched arnis Rust engine:
+    terrain, buildings, roads, water"]
+    F --> G["📦 Package as .zip"]
+    G --> H["🎮 Download → Play"]
+
+    style A fill:#4f8ff7,color:#fff
+    style F fill:#242733,color:#e4e6ed
+    style H fill:#3dd68c,color:#111
 ```
 
 ## Features
@@ -98,6 +99,33 @@ You draw a rectangle on the map
 - Victorian stone in the Lake District, brownstone in Brooklyn, timber in Scandinavia
 
 ## API
+
+```mermaid
+sequenceDiagram
+    participant Browser
+    participant Server
+    participant Overpass as Overpass API
+    participant Arnis as Arnis Engine
+
+    Browser->>Server: POST /api/generate {bbox, scale}
+    Server-->>Browser: {jobId}
+
+    Server->>Overpass: Fetch OSM data
+    Overpass-->>Server: Buildings, roads, water
+
+    Server->>Arnis: Generate world (OSM + elevation)
+    Arnis-->>Server: Minecraft region files
+
+    Server->>Server: Package as .zip
+
+    loop Poll every 1.5s
+        Browser->>Server: GET /api/status/:jobId
+        Server-->>Browser: {progress, message}
+    end
+
+    Browser->>Server: GET /api/download/:jobId
+    Server-->>Browser: terracraft-world.zip
+```
 
 ### `POST /api/generate`
 
@@ -148,7 +176,7 @@ Clean up a job and its files.
 
 ## Arnis Patches
 
-TerraCraft includes a 721-line patch to the upstream [arnis](https://github.com/louis-e/arnis) Minecraft generator, adding:
+TerraCraft includes a 793-line patch to the upstream [arnis](https://github.com/louis-e/arnis) Minecraft generator, adding:
 
 | Patch | What it does |
 |-------|-------------|
@@ -168,25 +196,57 @@ cd /path/to/output && cargo build --no-default-features --release
 
 ## Architecture
 
-```
-terracraft/
-├── frontend/           Vanilla JS + Leaflet.js (no build step)
-│   ├── index.html      Single-page application
-│   ├── style.css       Dark theme, responsive
-│   └── app.js          Map, drawing, API calls, polling
-├── backend/            Node.js + Express
-│   ├── server.js       REST API, job queue, file serving
-│   └── pipeline/
-│       ├── osm.js      Overpass API fetcher with retry
-│       ├── elevation.js Elevation routing (AWS/GEE)
-│       ├── enrich.js   LLM building enrichment
-│       ├── arnis.js    Rust binary wrapper
-│       └── package.js  World → zip packager
-├── arnis-patch/        Upstream arnis patches
-│   ├── geotiff-elevation.patch
-│   └── apply-patch.sh
-├── Dockerfile          Multi-stage: Rust build + Node runtime
-└── docker-compose.yml  One-command deployment
+```mermaid
+graph LR
+    subgraph Frontend["frontend/"]
+        HTML["index.html
+        Single-page app"]
+        CSS["style.css
+        Dark theme"]
+        JS["app.js
+        Map + API calls"]
+    end
+
+    subgraph Backend["backend/"]
+        SRV["server.js
+        REST API + job queue"]
+        subgraph Pipeline["pipeline/"]
+            OSM["osm.js
+            Overpass fetcher"]
+            ELEV["elevation.js
+            AWS / GEE routing"]
+            ENRICH["enrich.js
+            LLM enrichment"]
+            ARNIS["arnis.js
+            Rust binary wrapper"]
+            PKG["package.js
+            World → zip"]
+        end
+    end
+
+    subgraph Patch["arnis-patch/"]
+        DIFF["geotiff-elevation.patch
+        793 lines"]
+        SH["apply-patch.sh"]
+    end
+
+    subgraph Docker["Deployment"]
+        DF["Dockerfile
+        Multi-stage build"]
+        DC["docker-compose.yml"]
+    end
+
+    JS --> SRV
+    SRV --> OSM --> ARNIS
+    SRV --> ELEV --> ARNIS
+    SRV --> ENRICH --> ARNIS
+    ARNIS --> PKG
+
+    style Frontend fill:#1a1d27,color:#e4e6ed
+    style Backend fill:#242733,color:#e4e6ed
+    style Pipeline fill:#2e3142,color:#e4e6ed
+    style Patch fill:#2e3142,color:#e4e6ed
+    style Docker fill:#2e3142,color:#e4e6ed
 ```
 
 ## Choosing a Scale
