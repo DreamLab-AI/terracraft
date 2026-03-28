@@ -6,7 +6,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const { fetchOsmData } = require('./pipeline/osm');
 const { fetchElevation } = require('./pipeline/elevation');
-const { enrichBuildings } = require('./pipeline/enrich');
+const { enrichBuildings, scaleBuildingFootprints } = require('./pipeline/enrich');
 const { runArnis } = require('./pipeline/arnis');
 const { packageWorld, cleanupTempFiles } = require('./pipeline/package');
 const { bboxAreaKm2, estimateBlocks } = require('./utils/coords');
@@ -224,6 +224,12 @@ async function startJob(job, jobDir) {
         (msg) => updateProgress(Math.min(job.progress + 1, 44), msg)
       );
     }
+
+    // Step 3b: Scale building footprints at small scales (effective 1:5 on 1:10 map)
+    scaleBuildingFootprints(
+      osmResult.file, job.scale, 0.2,
+      (msg) => updateProgress(44, msg)
+    );
     updateProgress(45, 'Starting world generation...');
 
     // Step 4: Run arnis (45-85%)

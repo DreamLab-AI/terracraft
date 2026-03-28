@@ -104,10 +104,17 @@ index 74df108..d1b1140 100644
          // Bedrock: path is optional; if provided, it must be an existing directory
          if let Some(ref path) = args.path {
 diff --git a/src/data_processing.rs b/src/data_processing.rs
-index d0035bd..9f213e7 100644
+index d0035bd..756b66d 100644
 --- a/src/data_processing.rs
 +++ b/src/data_processing.rs
-@@ -192,7 +192,7 @@ pub fn generate_world_with_options(
+@@ -186,13 +186,13 @@ pub fn generate_world_with_options(
+                         &building_footprints,
+                     );
+                 } else if way.tags.contains_key("barrier") {
+-                    barriers::generate_barriers(&mut editor, &element);
++                    barriers::generate_barriers(&mut editor, &element, args);
+                 } else if let Some(val) = way.tags.get("waterway") {
+                     if val == "dock" {
                          // docks count as water areas
                          water_areas::generate_water_area_from_way(&mut editor, way, &xzbbox);
                      } else {
@@ -116,6 +123,77 @@ index d0035bd..9f213e7 100644
                      }
                  } else if way.tags.contains_key("bridge") {
                      //bridges::generate_bridges(&mut editor, way, ground_level); // TODO FIX
+@@ -210,7 +210,10 @@ pub fn generate_world_with_options(
+                 } else if way.tags.contains_key("man_made") {
+                     man_made::generate_man_made(&mut editor, &element, args);
+                 } else if way.tags.contains_key("power") {
+-                    power::generate_power(&mut editor, &element);
++                    // Skip power lines at small scales — visual clutter
++                    if args.scale >= 0.5 {
++                        power::generate_power(&mut editor, &element);
++                    }
+                 } else if way.tags.contains_key("place") {
+                     landuse::generate_place(&mut editor, way, args, &flood_fill_cache);
+                 }
+@@ -247,7 +250,9 @@ pub fn generate_world_with_options(
+                 } else if node.tags.contains_key("man_made") {
+                     man_made::generate_man_made_nodes(&mut editor, node);
+                 } else if node.tags.contains_key("power") {
+-                    power::generate_power_nodes(&mut editor, node);
++                    if args.scale >= 0.5 {
++                        power::generate_power_nodes(&mut editor, node);
++                    }
+                 } else if node.tags.contains_key("historic") {
+                     historic::generate_historic(&mut editor, node);
+                 } else if node.tags.contains_key("emergency") {
+diff --git a/src/element_processing/barriers.rs b/src/element_processing/barriers.rs
+index eef917d..2c60337 100644
+--- a/src/element_processing/barriers.rs
++++ b/src/element_processing/barriers.rs
+@@ -1,9 +1,10 @@
++use crate::args::Args;
+ use crate::block_definitions::*;
+ use crate::bresenham::bresenham_line;
+ use crate::osm_parser::{ProcessedElement, ProcessedNode};
+ use crate::world_editor::WorldEditor;
+ 
+-pub fn generate_barriers(editor: &mut WorldEditor, element: &ProcessedElement) {
++pub fn generate_barriers(editor: &mut WorldEditor, element: &ProcessedElement, args: &Args) {
+     // Default values
+     let mut barrier_material: Block = COBBLESTONE_WALL;
+     let mut barrier_height: i32 = 2;
+@@ -55,7 +56,7 @@ pub fn generate_barriers(editor: &mut WorldEditor, element: &ProcessedElement) {
+             }
+         }
+         Some("wall") => {
+-            barrier_material = STONE_BRICK_WALL;
++            barrier_material = COBBLESTONE_WALL;
+             barrier_height = 3;
+         }
+         _ => {}
+@@ -96,15 +97,16 @@ pub fn generate_barriers(editor: &mut WorldEditor, element: &ProcessedElement) {
+             // Generate the line of coordinates between the two nodes
+             let bresenham_points: Vec<(i32, i32, i32)> = bresenham_line(x1, 0, z1, x2, 0, z2);
+ 
++            // At small scales, simplify walls to 1-block clean lines
++            let effective_height = if args.scale < 0.5 { wall_height.min(1) } else { wall_height };
++
+             for (bx, _, bz) in bresenham_points {
+-                // Build the barrier wall to the specified height
+-                for y in 1..=wall_height {
++                for y in 1..=effective_height {
+                     editor.set_block(barrier_material, bx, y, bz, None, None);
+                 }
+-
+-                // Add an optional top to the barrier if the height is more than 1
+-                if wall_height > 1 {
+-                    editor.set_block(STONE_BRICK_SLAB, bx, wall_height + 1, bz, None, None);
++                // Only add slab cap at larger scales
++                if args.scale >= 0.5 && effective_height > 1 {
++                    editor.set_block(STONE_BRICK_SLAB, bx, effective_height + 1, bz, None, None);
+                 }
+             }
+         }
 diff --git a/src/element_processing/highways.rs b/src/element_processing/highways.rs
 index d7190f2..48f9906 100644
 --- a/src/element_processing/highways.rs

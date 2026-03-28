@@ -167,4 +167,87 @@ function parseJsonResponse(text) {
   return JSON.parse(cleaned);
 }
 
-module.exports = { enrichBuildings };
+/**
+ * Scale building footprints for better visibility at small map scales.
+ *
+ * At 1:10 (scale=0.1), a 10m building becomes 1 block — invisible.
+ * This scales each building's node coordinates outward from its centroid
+ * by a factor, so buildings render at an effective larger scale while
+ * staying at their correct terrain position.
+ *
+ * @param {string} osmFile - Path to OSM JSON file (modified in place)
+ * @param {number} mapScale - The world scale (e.g. 0.1 for 1:10)
+ * @param {number} targetBuildingScale - Desired effective building scale (e.g. 0.2 for 1:5)
+ * @param {function} onProgress - Progress callback
+ */
+function scaleBuildingFootprints(osmFile, mapScale, targetBuildingScale, onProgress) {
+  if (mapScale >= 0.5) {
+    // Buildings are large enough at 1:2 and above
+    if (onProgress) onProgress('Buildings large enough at this scale, no footprint scaling needed');
+    return;
+  }
+
+  const scaleFactor = targetBuildingScale / mapScale; // e.g. 0.2/0.1 = 2.0
+  if (scaleFactor <= 1.0) return;
+
+  if (onProgress) onProgress(`Scaling building footprints ${scaleFactor}x for visibility...`);
+
+  const raw = fs.readFileSync(osmFile, 'utf-8');
+  const osm = JSON.parse(raw);
+
+  // Build node lookup
+  const nodeMap = new Map();
+  for (const el of osm.elements) {
+    if (el.type === 'node') nodeMap.set(el.id, el);
+  }
+
+  // Find buildings
+  const buildings = osm.elements.filter(
+    (el) => el.type === 'way' && el.tags && el.tags.building
+  );
+
+  let maxId = 0;
+  for (const el of osm.elements) {
+    if (el.type === 'node' && el.id > maxId) maxId = el.id;
+  }
+
+  const newNodes = [];
+  let scaled = 0;
+
+  for (const b of buildings) {
+    const nodeIds = b.nodes || [];
+    const coords = [];
+    for (const nid of nodeIds) {
+      const n = nodeMap.get(nid);
+      if (n) coords.push({ lat: n.lat, lon: n.lon });
+    }
+    if (coords.length < 3) continue;
+
+    // Centroid (exclude closing node if ring)
+    const ring = (nodeIds[0] === nodeIds[nodeIds.length - 1] && coords.length > 1)
+      ? coords.slice(0, -1) : coords;
+    const cLat = ring.reduce((s, c) => s + c.lat, 0) / ring.length;
+    const cLon = ring.reduce((s, c) => s + c.lon, 0) / ring.length;
+
+    // Create new scaled nodes
+    const newIds = [];
+    for (const { lat, lon } of coords) {
+      maxId++;
+      newNodes.push({
+        id: maxId, type: 'node',
+        lat: cLat + (lat - cLat) * scaleFactor,
+        lon: cLon + (lon - cLon) * scaleFactor,
+      });
+      newIds.push(maxId);
+    }
+    b.nodes = newIds;
+    scaled++;
+  }
+
+  osm.elements.push(...newNodes);
+  fs.writeFileSync(osmFile, JSON.stringify(osm), 'utf-8');
+
+  if (onProgress) onProgress(`Scaled ${scaled} building footprints (${newNodes.length} new nodes)`);
+}
+
+module.exports = { enrichBuildings, scaleBuildingFootprints };
