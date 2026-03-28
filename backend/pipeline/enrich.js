@@ -187,7 +187,7 @@ function scaleBuildingFootprints(osmFile, mapScale, targetBuildingScale, onProgr
     return;
   }
 
-  const scaleFactor = targetBuildingScale / mapScale; // e.g. 0.2/0.1 = 2.0
+  const scaleFactor = targetBuildingScale / mapScale; // e.g. 0.15/0.1 = 1.5
   if (scaleFactor <= 1.0) return;
 
   if (onProgress) onProgress(`Scaling building footprints ${scaleFactor}x for visibility...`);

@@ -226,8 +226,9 @@ async function startJob(job, jobDir) {
     }
 
     // Step 3b: Scale building footprints at small scales (effective 1:5 on 1:10 map)
+    // Scale buildings to 1:5 effective (0.15/0.1 = 1.5x) at small scales
     scaleBuildingFootprints(
-      osmResult.file, job.scale, 0.2,
+      osmResult.file, job.scale, 0.15,
       (msg) => updateProgress(44, msg)
     );
     updateProgress(45, 'Starting world generation...');
